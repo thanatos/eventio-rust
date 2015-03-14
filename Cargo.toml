@@ -1,0 +1,11 @@
+[package]
+name = "eio"
+version = "0.0.1"
+authors = ["Roy Wellington Ⅳ"]
+
+[lib]
+name = "eio"
+path = "src/lib.rs"
+
+[dependencies.nix]
+git = "https://github.com/carllerche/nix-rust.git"
