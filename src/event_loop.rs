@@ -1,5 +1,8 @@
 extern crate nix;
 extern crate libc;
+
+use libc::c_int;
+use nix::sys::epoll;
 use std::boxed::Box;
 use std::collections;
 use std::mem;
@@ -14,16 +17,16 @@ pub trait EventLoop {
 
 
 struct EpollHandlerData<'a> {
-    on_event: Box<FnMut(nix::sys::epoll::EpollEventKind) + Send + Sync + 'a>,
+    on_event: Box<FnMut(epoll::EpollEventKind) + Send + Sync + 'a>,
 }
 
 
 struct WrappedFd {
-    pub fd: libc::c_int,
+    pub fd: c_int,
 }
 
 impl WrappedFd {
-    fn new(fd: libc::c_int) -> WrappedFd {
+    fn new(fd: c_int) -> WrappedFd {
         WrappedFd {
             fd: fd,
         }
@@ -39,7 +42,7 @@ impl Drop for WrappedFd {
 
 struct EpollEventLoop<'a> {
 	epoll_fd: WrappedFd,
-    fd_data: collections::HashMap<libc::c_int, EpollHandlerData<'a>>,
+    fd_data: collections::HashMap<c_int, EpollHandlerData<'a>>,
 	wakeup_fd: WrappedFd,
 	stop: atomic::AtomicBool,
     // Calls to run on wakeup.
@@ -63,7 +66,7 @@ fn only_nix_sys_err<T>(result: nix::NixResult<T>)
 
 pub fn new<'a>() -> Result<EpollEventLoop<'a>, nix::errno::Errno> {
 	let epoll_fd = WrappedFd::new(try!(
-        only_nix_sys_err(nix::sys::epoll::epoll_create())
+        only_nix_sys_err(epoll::epoll_create())
     ));
 
     let wakeup_fd = WrappedFd::new(try!(
@@ -72,12 +75,12 @@ pub fn new<'a>() -> Result<EpollEventLoop<'a>, nix::errno::Errno> {
         )
     ));
 
-    try!(only_nix_sys_err(nix::sys::epoll::epoll_ctl(
+    try!(only_nix_sys_err(epoll::epoll_ctl(
         epoll_fd.fd,
-        nix::sys::epoll::EpollOp::EpollCtlAdd,
+        epoll::EpollOp::EpollCtlAdd,
         wakeup_fd.fd,
-        &nix::sys::epoll::EpollEvent {
-            events: nix::sys::epoll::EPOLLIN,
+        &epoll::EpollEvent {
+            events: epoll::EPOLLIN,
             data: wakeup_fd.fd as u64,
         },
     )));
@@ -113,11 +116,11 @@ impl<'a> EpollEventLoop<'a> {
     fn single_loop(&self) {
         // This gets initialized by the epoll_wait call.
         // Note that only a portion of the array may get initialized.
-        let mut events: [nix::sys::epoll::EpollEvent; 16] = unsafe {
+        let mut events: [epoll::EpollEvent; 16] = unsafe {
             mem::uninitialized()
         };
         let result = only_nix_sys_err(
-            nix::sys::epoll::epoll_wait(self.epoll_fd.fd, &mut events, 0)
+            epoll::epoll_wait(self.epoll_fd.fd, &mut events, 0)
         );
         let number_of_events: usize;
         match result {
@@ -134,7 +137,7 @@ impl<'a> EpollEventLoop<'a> {
 
         for index in 0..number_of_events {
             let event = events[index];
-            let fd = event.data as libc::c_int;
+            let fd = event.data as c_int;
 
             if fd == self.wakeup_fd.fd {
                 self.handle_wakeup_fd();
